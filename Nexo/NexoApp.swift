@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct NexoApp: App {
@@ -13,5 +14,6 @@ struct NexoApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [Subject.self, Term.self])
     }
 }
