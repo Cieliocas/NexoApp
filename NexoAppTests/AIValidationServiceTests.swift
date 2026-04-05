@@ -96,8 +96,8 @@ final class AIValidationServiceTests: XCTestCase {
     // MARK: - RelationshipType
 
     func test_relationshipType_allCasesHaveIcon() {
-        for type_ in RelationshipType.allCases {
-            XCTAssertFalse(type_.icon.isEmpty, "\(type_) should have a non-empty SF Symbol name")
+        for relType in RelationshipType.allCases {
+            XCTAssertFalse(relType.icon.isEmpty, "\(relType) should have a non-empty SF Symbol name")
         }
     }
 }

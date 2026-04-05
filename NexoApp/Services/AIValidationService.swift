@@ -56,18 +56,39 @@ struct RelatedTermSuggestion: Identifiable {
     let reason: String
 }
 
+/// Sendable value-type snapshot of a Term used for background-safe computation.
+struct TermSnapshot: Sendable {
+    let id: UUID
+    let name: String
+    let definition: String
+
+    init(term: Term) {
+        self.id = term.id
+        self.name = term.name
+        self.definition = term.termDefinition
+    }
+}
+
+/// Raw suggestion returned from background computation before mapping to full Terms.
+struct RawTermSuggestion: Sendable {
+    let termID: UUID
+    let similarity: Double
+    let reason: String
+}
+
 // MARK: - AIValidationService
 
 /// On-device AI service that uses Apple's NaturalLanguage framework to
 /// validate academic definitions and discover semantic connections between terms.
-@MainActor
+///
+/// The class is not actor-isolated so expensive embedding computations can be
+/// called from a background `Task` without blocking the main thread.
 final class AIValidationService: ObservableObject {
 
     static let shared = AIValidationService()
 
-    // NLEmbedding is loaded lazily; may be nil when running without a language model.
+    // NLEmbedding is thread-safe (Apple documentation) and loaded once.
     private let wordEmbedding: NLEmbedding?
-    private let tagger = NLTagger(tagSchemes: [.lexicalClass])
 
     private init() {
         wordEmbedding = NLEmbedding.wordEmbedding(for: .english)
@@ -98,9 +119,10 @@ final class AIValidationService: ObservableObject {
         }
 
         // 2. Word-count length (20 %)
-        let words = definition.split(separator: " ")
+        let words = definition.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
         let wordCount = words.count
-        let lengthScore = min(Double(wordCount) / 25.0, 1.0)
+        let targetWordCount = 25.0
+        let lengthScore = min(Double(wordCount) / targetWordCount, 1.0)
         score += lengthScore * 0.20
         if wordCount < 10 {
             suggestions.append("Expand your definition (currently \(wordCount) words; aim for 20+).")
@@ -152,6 +174,42 @@ final class AIValidationService: ObservableObject {
         return keywordBasedSuggestions(for: term, candidates: candidates, limit: limit)
     }
 
+    /// Background-safe version that works on `TermSnapshot` value types.
+    /// Called from `Task.detached` in views to avoid blocking the main thread.
+    func findRelatedTermSnapshots(
+        for term: TermSnapshot,
+        in candidates: [TermSnapshot],
+        limit: Int = 5
+    ) -> [RawTermSuggestion] {
+        guard !candidates.isEmpty else { return [] }
+
+        if let embedding = wordEmbedding {
+            return candidates
+                .compactMap { candidate -> (UUID, Double)? in
+                    guard let tVec = averageVector(for: term.name, embedding: embedding),
+                          let cVec = averageVector(for: candidate.name, embedding: embedding)
+                    else { return nil }
+                    let sim = cosineSimilarity(tVec, cVec)
+                    return sim > 0.25 ? (candidate.id, sim) : nil
+                }
+                .sorted { $0.1 > $1.1 }
+                .prefix(limit)
+                .map { RawTermSuggestion(termID: $0.0, similarity: $0.1, reason: "Semantically similar concept") }
+        }
+
+        // Keyword fallback
+        let termWords = Set(tokens(for: term.name + " " + term.definition).filter { $0.count > 3 })
+        return candidates
+            .compactMap { candidate -> (UUID, Double)? in
+                let candWords = Set(tokens(for: candidate.name + " " + candidate.definition).filter { $0.count > 3 })
+                let jaccard = jaccardSimilarity(termWords, candWords)
+                return jaccard > 0.08 ? (candidate.id, jaccard) : nil
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map { RawTermSuggestion(termID: $0.0, similarity: $0.1, reason: "Shares common terminology") }
+    }
+
     // MARK: - Category Suggestion
 
     /// Suggests the best-fitting category for a term name from a list of categories.
@@ -179,6 +237,8 @@ final class AIValidationService: ObservableObject {
     }
 
     private func academicPOSScore(for text: String) -> Double {
+        // NLTagger is not thread-safe; create a fresh instance per call.
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
         tagger.string = text
         let range = text.startIndex..<text.endIndex
         var nouns = 0
@@ -257,14 +317,18 @@ final class AIValidationService: ObservableObject {
         return candidates
             .compactMap { candidate -> (Term, Double)? in
                 let candWords = Set(tokens(for: candidate.name + " " + candidate.termDefinition).filter { $0.count > 3 })
-                let inter  = termWords.intersection(candWords).count
-                let union  = termWords.union(candWords).count
-                let jaccard = union > 0 ? Double(inter) / Double(union) : 0
+                let jaccard = jaccardSimilarity(termWords, candWords)
                 return jaccard > 0.08 ? (candidate, jaccard) : nil
             }
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
             .map { RelatedTermSuggestion(term: $0.0, similarity: $0.1, reason: "Shares common terminology") }
+    }
+
+    private func jaccardSimilarity(_ a: Set<String>, _ b: Set<String>) -> Double {
+        let inter = a.intersection(b).count
+        let union = a.union(b).count
+        return union > 0 ? Double(inter) / Double(union) : 0
     }
 
     private func averageVector(for text: String, embedding: NLEmbedding) -> [Double]? {

@@ -46,13 +46,13 @@ All AI processing runs entirely on-device using Apple's **NaturalLanguage** fram
 ```
 NexoApp/
 ├── Models/
-│   ├── Term.swift               SwiftData model for glossary entries
-│   ├── GlossaryCategory.swift   Hierarchical category model
-│   └── TermRelationship.swift   Typed link between two terms
+│   ├── Term.swift
+│   ├── GlossaryCategory.swift
+│   └── TermRelationship.swift
 ├── Services/
-│   └── AIValidationService.swift  On-device NLP engine
+│   └── AIValidationService.swift
 ├── ViewModels/
-│   └── GlossaryViewModel.swift  Central state + business logic
+│   └── GlossaryViewModel.swift
 ├── Views/
 │   ├── HomeView.swift
 │   ├── CategoriesView.swift
@@ -67,6 +67,14 @@ NexoApp/
 └── Extensions/
     └── Color+Hex.swift
 ```
+
+| File | Purpose |
+|---|---|
+| `Term.swift` | SwiftData model for glossary entries |
+| `GlossaryCategory.swift` | Hierarchical category model (tree via `parentID`) |
+| `TermRelationship.swift` | Typed, directional link between two terms |
+| `AIValidationService.swift` | On-device NLP engine |
+| `GlossaryViewModel.swift` | Central state + business logic |
 
 ---
 

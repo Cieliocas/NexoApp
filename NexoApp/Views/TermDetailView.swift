@@ -273,9 +273,29 @@ struct TermDetailView: View {
     private func loadAISuggestions() async {
         guard !allTerms.isEmpty else { return }
         isLoadingRelated = true
-        let suggestions = AIValidationService.shared.findRelatedTerms(for: term, in: allTerms)
+
+        // Capture value types from SwiftData models before hopping off the main actor.
+        let termSnapshot = TermSnapshot(term: term)
+        let candidateSnapshots = allTerms.filter { $0.id != term.id }.map(TermSnapshot.init)
         let existingIDs = Set(existingRelationships.flatMap { [$0.sourceTermID, $0.targetTermID] })
-        relatedSuggestions = suggestions.filter { !existingIDs.contains($0.term.id) }
+
+        // Run embedding computation on a background priority task to avoid
+        // blocking the main thread for large glossaries.
+        let rawSuggestions = await Task.detached(priority: .userInitiated) {
+            AIValidationService.shared.findRelatedTermSnapshots(
+                for: termSnapshot,
+                in: candidateSnapshots
+            )
+        }.value
+
+        // Map back to full Term objects on the main actor.
+        let termsByID = Dictionary(uniqueKeysWithValues: allTerms.map { ($0.id, $0) })
+        relatedSuggestions = rawSuggestions
+            .filter { !existingIDs.contains($0.termID) }
+            .compactMap { raw in
+                guard let fullTerm = termsByID[raw.termID] else { return nil }
+                return RelatedTermSuggestion(term: fullTerm, similarity: raw.similarity, reason: raw.reason)
+            }
         isLoadingRelated = false
     }
 
