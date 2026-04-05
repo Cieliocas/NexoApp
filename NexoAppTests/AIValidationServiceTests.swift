@@ -1,7 +1,8 @@
 import XCTest
 @testable import NexoApp
 
-// NOTE: AIValidationService is @MainActor, so tests run on the main actor.
+// NOTE: AIValidationService is non-isolated (not @MainActor); its computations are
+// background-safe. Tests run on the main actor simply for SwiftData model creation.
 @MainActor
 final class AIValidationServiceTests: XCTestCase {
 

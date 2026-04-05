@@ -127,7 +127,7 @@ struct TermDetailView: View {
 
     private var connectionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Connections", systemImage: "arrow.triangle.branch")
+            Label("Connected Terms", systemImage: "arrow.triangle.branch")
                 .font(.headline)
 
             if existingRelationships.isEmpty {

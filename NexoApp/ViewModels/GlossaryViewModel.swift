@@ -19,6 +19,8 @@ final class GlossaryViewModel: ObservableObject {
     @Published var isValidating: Bool = false
     @Published var suggestedRelations: [RelatedTermSuggestion] = []
 
+    // AIValidationService is non-isolated (thread-safe), so it can safely be
+    // called from this @MainActor ViewModel without any cross-isolation concerns.
     private let aiService = AIValidationService.shared
 
     // MARK: - Validation
